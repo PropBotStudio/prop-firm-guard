@@ -1,0 +1,126 @@
+// Prop Firm Guard · Risk Panel for TradingView. MIT License, see https://github.com/PropBotStudio/prop-firm-guard
+// © PropBotStudio
+//@version=6
+indicator("Prop Firm Guard · Risk Panel", shorttitle = "PFG Risk", overlay = true, max_lines_count = 10, max_labels_count = 10, calc_bars_count = 50)
+
+// ───────── Inputs ─────────
+const string G_ACC  = "Account"
+const string G_RULE = "Prop firm rules"
+const string G_TRD  = "Next trade"
+const string G_RST  = "Daily reset"
+const string G_UI   = "Display"
+
+accSize   = input.float(100000, "Account size",                minval = 1,  group = G_ACC, display = display.none)
+accCcy    = input.string("USD", "Account currency", options = ["USD", "EUR", "GBP", "CHF", "CAD", "AUD", "JPY"], group = G_ACC, display = display.none)
+dayStart  = input.float(100000, "Balance at start of today",   minval = 0,  group = G_ACC, tooltip = "Copy it from your prop firm dashboard. TradingView cannot read your account, so the panel uses the values you enter here.", display = display.none)
+curEquity = input.float(100000, "Current equity",              minval = 0,  group = G_ACC, tooltip = "Update it during the day for an accurate remaining room.", display = display.none)
+peakEq    = input.float(100000, "Highest balance (trailing drawdown only)", minval = 0, group = G_ACC, display = display.none)
+
+maxDaily  = input.float(5,  "Max daily loss (%)",     minval = 0, step = 0.5, group = G_RULE, tooltip = "0 = off", display = display.none)
+dailyBase = input.string("Account size", "Daily loss calculated on", options = ["Account size", "Start-of-day balance"], group = G_RULE, display = display.none)
+maxDD     = input.float(10, "Max total drawdown (%)", minval = 0, step = 0.5, group = G_RULE, tooltip = "0 = off", display = display.none)
+ddMode    = input.string("Static", "Drawdown mode", options = ["Static", "Trailing"], group = G_RULE, tooltip = "Static: floor = account size minus the max drawdown. Trailing: floor follows your highest balance.", display = display.none)
+
+riskPct   = input.float(0.5, "Risk per trade (% of account size)", minval = 0.01, step = 0.1, group = G_TRD, display = display.none)
+entry     = input.price(0, "Entry price",     confirm = true, group = G_TRD, display = display.none)
+stop      = input.price(0, "Stop loss price", confirm = true, group = G_TRD, display = display.none)
+lotUnits  = input.float(0, "Units per lot (0 = auto)", minval = 0, group = G_TRD, tooltip = "Auto: 100,000 for forex, 1 for everything else. For CFDs, use your broker's contract size (for example 100 for gold).", display = display.none)
+
+resetHour = input.int(0, "Reset hour", minval = 0, maxval = 23, group = G_RST, display = display.none)
+resetZone = input.string("Central Europe", "Reset time zone", options = ["Central Europe", "New York", "London", "UTC"], group = G_RST, tooltip = "Daylight saving time is handled automatically. Check your prop firm's rules.", display = display.none)
+
+panelPos  = input.string("Top right", "Panel position", options = ["Top right", "Bottom right", "Top left", "Bottom left"], group = G_UI, display = display.none)
+showLines = input.bool(true, "Show entry and stop lines", group = G_UI, display = display.none)
+
+// ───────── Limits ─────────
+dailyRefAmt = dailyBase == "Account size" ? accSize : dayStart
+dailyFloor  = maxDaily > 0 ? dayStart - dailyRefAmt * maxDaily / 100 : na
+ddFloor     = maxDD > 0 ? (ddMode == "Static" ? accSize : math.max(peakEq, accSize)) - accSize * maxDD / 100 : na
+
+roomDaily = na(dailyFloor) ? na : curEquity - dailyFloor
+roomTotal = na(ddFloor)    ? na : curEquity - ddFloor
+room      = na(roomDaily) ? roomTotal : na(roomTotal) ? roomDaily : math.min(roomDaily, roomTotal)
+
+// ───────── Position size ─────────
+riskAmt  = accSize * riskPct / 100
+fx       = request.currency_rate(syminfo.currency, accCcy, ignore_invalid_currency = true)
+rate     = na(fx) ? 1.0 : fx
+dist     = math.abs(entry - stop)
+hasTrade = entry > 0 and stop > 0 and dist > 0
+lossUnit = dist * syminfo.pointvalue * rate
+units    = hasTrade and lossUnit > 0 ? riskAmt / lossUnit : na
+perLot   = lotUnits > 0 ? lotUnits : syminfo.type == "forex" ? 100000.0 : 1.0
+lots     = units / perLot
+tradesLeft = na(room) ? na : math.max(0, math.floor(room / riskAmt))
+
+// ───────── Daily reset countdown ─────────
+tz = switch resetZone
+    "Central Europe" => "Europe/Paris"
+    "New York"       => "America/New_York"
+    "London"         => "Europe/London"
+    => "UTC"
+todayReset = timestamp(tz, year(timenow, tz), month(timenow, tz), dayofmonth(timenow, tz), resetHour, 0)
+nextReset  = timenow >= todayReset ? todayReset + 86400000 : todayReset
+msLeft     = nextReset - timenow
+hLeft      = math.floor(msLeft / 3600000)
+mLeft      = math.floor((msLeft % 3600000) / 60000)
+
+// ───────── Helpers ─────────
+money(float v) => na(v) ? "–" : str.tostring(v, "#,##0") + " " + accCcy
+fmtSize(float v) => na(v) ? "–" : perLot > 1 ? str.tostring(v, "0.00") + " lots" : str.tostring(v, "#,##0.##") + " units"
+
+C_BG    = color.new(#11151C, 0)
+C_TXT   = color.new(#DCD9D1, 0)
+C_MUTED = color.new(#8A93A6, 0)
+C_OK    = color.new(#3FB27F, 0)
+C_WARN  = color.new(#E8A33D, 0)
+C_BAD   = color.new(#E5484D, 0)
+
+string status = "OK to trade"
+color  sColor = C_OK
+if not na(room) and room <= 0
+    status := "LIMIT REACHED · stop trading"
+    sColor := C_BAD
+else if not na(room) and riskAmt > room
+    status := "This trade can break a limit"
+    sColor := C_BAD
+else if not na(room) and room < 2 * riskAmt
+    status := "Close to a limit"
+    sColor := C_WARN
+
+// ───────── Panel ─────────
+pos = switch panelPos
+    "Top right"    => position.top_right
+    "Bottom right" => position.bottom_right
+    "Top left"     => position.top_left
+    => position.bottom_left
+
+var table panel = table.new(pos, 2, 11, bgcolor = C_BG, border_color = sColor, border_width = 2, frame_color = sColor, frame_width = 2)
+
+row(int r, string k, string v, color vc) =>
+    table.cell(panel, 0, r, k, text_color = C_MUTED, text_size = size.small, text_halign = text.align_left)
+    table.cell(panel, 1, r, v, text_color = vc, text_size = size.small, text_halign = text.align_right)
+
+if barstate.islast
+    table.cell(panel, 0, 0, "Prop Firm Guard", text_color = C_TXT, text_size = size.normal, text_halign = text.align_left)
+    table.cell(panel, 1, 0, status, text_color = sColor, text_size = size.small, text_halign = text.align_right)
+    row(1, "Daily loss floor",       money(dailyFloor), C_TXT)
+    row(2, "Room left today",        money(roomDaily), not na(roomDaily) and roomDaily <= 0 ? C_BAD : C_TXT)
+    row(3, "Max drawdown floor",     money(ddFloor), C_TXT)
+    row(4, "Room left in total",     money(roomTotal), not na(roomTotal) and roomTotal <= 0 ? C_BAD : C_TXT)
+    row(5, "Risk per trade",         money(riskAmt) + " (" + str.tostring(riskPct, "0.##") + "%)", C_TXT)
+    row(6, "Full losses before limit", na(tradesLeft) ? "–" : str.tostring(tradesLeft, "0"), C_TXT)
+    row(7, "Stop distance",          hasTrade ? str.tostring(dist, format.mintick) : "pick entry and stop", C_TXT)
+    row(8, "Position size",          hasTrade ? fmtSize(lots) : "–", C_OK)
+    row(9, "Daily reset in",         str.tostring(hLeft, "0") + "h " + str.tostring(mLeft, "00") + "m (" + resetZone + " " + str.tostring(resetHour, "00") + ":00)", C_TXT)
+    row(10, "Info",                  na(fx) ? "No FX rate: size shown in " + syminfo.currency : "Manual values · not linked to your account", C_MUTED)
+
+// ───────── Entry and stop lines ─────────
+var line  lEntry = na
+var line  lStop  = na
+var label tStop  = na
+if barstate.islast and showLines and hasTrade
+    line.delete(lEntry), line.delete(lStop), label.delete(tStop)
+    lEntry := line.new(bar_index - 30, entry, bar_index + 15, entry, color = color.new(#2962FF, 0), width = 2, style = line.style_dashed)
+    lStop  := line.new(bar_index - 30, stop,  bar_index + 15, stop,  color = C_BAD, width = 2, style = line.style_dashed)
+    tStop  := label.new(bar_index + 15, stop, "SL · -" + money(riskAmt) + " · " + fmtSize(lots), color = C_BAD, textcolor = color.white, style = label.style_label_left, size = size.small)
