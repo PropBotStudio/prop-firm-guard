@@ -2,7 +2,7 @@
 
 # Prop Firm Guard
 
-**Free daily loss and max drawdown protection for prop firm accounts, for MetaTrader 5 and cTrader.**
+**Free daily loss and max drawdown protection for prop firm accounts, for MetaTrader 5 and cTrader, plus a risk and position size panel for TradingView.**
 
 Prop Firm Guard protects challenge and funded accounts from the two rules that end most prop firm accounts: the **daily loss limit** and the **maximum drawdown**. It never opens trades. Attach it to any chart, keep trading as usual (manually or with other bots), and it checks your equity every second. As soon as a limit is reached, it:
 
@@ -58,6 +58,21 @@ The daily lock lasts until the next daily reset. The max drawdown lock stays unt
 
 <p align="center"><img src="images/ctrader-parameters.png" alt="Prop Firm Guard parameters in cTrader" width="420"></p>
 
+## TradingView: Risk Panel
+
+TradingView scripts cannot read your account or close trades, so the TradingView version is a **risk and position size panel** rather than an automatic guard. You enter your account size, start-of-day balance and current equity (from your prop firm dashboard), and it shows:
+
+- the daily loss floor and the room left today
+- the max drawdown floor (static or trailing) and the room left in total
+- how many full losses you can take before a limit is hit
+- the **position size** for your next trade: click your entry and stop loss on the chart, and it converts the risk into lots or units, in your account currency
+- a countdown to the daily reset (Central Europe, New York, London or UTC, daylight saving handled)
+- a green / orange / red status
+
+<p align="center"><img src="images/tradingview-panel.png" alt="Prop Firm Guard Risk Panel on a TradingView chart" width="580"></p>
+
+**Installation:** open the **Pine Editor** at the bottom of a TradingView chart, replace its content with [`TradingView/PropFirmGuard.pine`](TradingView/PropFirmGuard.pine), click **Add to chart**, then click your entry price and stop loss on the chart. Works with a free TradingView account.
+
 ## Important
 
 - Check the exact rules of your prop firm (limit values, daily reset time, balance or equity reference) and set the parameters accordingly. Rules differ between firms.
@@ -67,7 +82,7 @@ The daily lock lasts until the next daily reset. The max drawdown lock stays unt
 
 ## Need a custom bot?
 
-Prop Firm Guard is made by **[PropBot Studio](https://propbotstudio.fr/en/)**: custom trading bots and indicators for **cTrader, NinjaTrader, MetaTrader 4/5 and TradingView**, with prop firm rules built in (daily loss, max drawdown, position sizing, trading hours, news and weekend filters). Fixed prices, source code included, everything handled in writing in English or French.
+Prop Firm Guard is made by **[propbotstudio.fr](https://propbotstudio.fr/en/)**: custom trading bots and indicators for **cTrader, NinjaTrader, MetaTrader 4/5 and TradingView**, with prop firm rules built in (daily loss, max drawdown, position sizing, trading hours, news and weekend filters). Fixed prices, source code included, everything handled in writing in English or French.
 
 👉 **[propbotstudio.fr/en](https://propbotstudio.fr/en/)** · contact@propbotstudio.fr
 
